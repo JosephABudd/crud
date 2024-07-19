@@ -1,0 +1,33 @@
+.{
+    .name = "crud",
+    .version = "0.0.0",
+    .dependencies = .{
+        .dvui = .{
+            .url = "https://github.com/david-vanderson/dvui/archive/dc3340403a8c04bf343e6c92215d4908745354eb.tar.gz",
+            .hash = "1220f0f7d58754fa0286ff14b9dd4d3c2dca57e9b372b15de8bf753fec58e22485df",
+        },
+        .fridge = .{
+            .url = "https://github.com/cztomsik/fridge/archive/c8a5bebd80f04234b77ce61f145bc55e5067e53e/.tar.gz",
+            .hash = "12202353d7b264aa664e29e70cfdac5d9a1106294e4d1383c96cc1a2fcd49e288fd5",
+        },
+    },
+    // Specifies the set of files and directories that are included in this package.
+    // Only files and directories listed here are included in the `hash` that
+    // is computed for this package.
+    // Paths are relative to the build root. Use the empty string (`""`) to refer to
+    // the build root itself.
+    // A directory listed here means that all files within, recursively, are included.
+    .paths = .{
+        // This makes *all* files, recursively, included in this package. It is generally
+        // better to explicitly list the files and directories instead, to insure that
+        // fetching from tarballs, file system paths, and version control all result
+        // in the same contents hash.
+        "",
+        // For example...
+        //"build.zig",
+        //"build.zig.zon",
+        //"src",
+        //"LICENSE",
+        //"README.md",
+    },
+}
