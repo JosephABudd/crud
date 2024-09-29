@@ -70,6 +70,24 @@ pub const Job = struct {
     context: *anyopaque,
     job: *const fn (context: *anyopaque) void,
 
+    pub fn init(
+        allocator: std.mem.Allocator,
+        title: []const u8,
+        context: *anyopaque,
+        job: *const fn (context: *anyopaque) void,
+    ) !*const Job {
+        var self: *const Job = try allocator.create(Job);
+        @constCast(self).count_pointers = try Counter.init(allocator);
+        _ = self.count_pointers.inc();
+        errdefer allocator.destroy(self);
+        @constCast(self).title = try allocator.alloc(u8, title.len);
+        @memcpy(@constCast(self.title), title);
+        @constCast(self).allocator = allocator;
+        @constCast(self).context = context;
+        @constCast(self).job = job;
+        return self;
+    }
+
     // deinit does not deinit until self is the final pointer to Job.
     pub fn deinit(self: *const Job) void {
         if (self.count_pointers.dec() > 0) {
@@ -90,24 +108,6 @@ pub const Job = struct {
     /// See deinit().
     pub fn copy(self: *const Job) !*const Job {
         _ = self.count_pointers.inc();
-        return self;
-    }
-
-    pub fn init(
-        allocator: std.mem.Allocator,
-        title: []const u8,
-        context: *anyopaque,
-        job: *const fn (context: *anyopaque) void,
-    ) !*const Job {
-        var self: *const Job = try allocator.create(Job);
-        @constCast(self).count_pointers = try Counter.init(allocator);
-        _ = self.count_pointers.inc();
-        errdefer allocator.destroy(self);
-        @constCast(self).title = try allocator.alloc(u8, title.len);
-        @memcpy(@constCast(self.title), title);
-        @constCast(self).allocator = allocator;
-        @constCast(self).context = context;
-        @constCast(self).job = job;
         return self;
     }
 };

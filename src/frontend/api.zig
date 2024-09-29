@@ -1,15 +1,18 @@
 const std = @import("std");
 const dvui = @import("dvui");
 
-const _main_menu_ = @import("main_menu.zig");
+const _main_menu_ = @import("main_menu");
 const _modal_params_ = @import("modal_params");
 const _startup_ = @import("startup");
+
 const MainView = @import("framers").MainView;
 const ScreenPointers = @import("screen_pointers").ScreenPointers;
 
 var allocator: std.mem.Allocator = undefined;
 var main_view: *MainView = undefined; // standalone-sdl will deinit.
 var screen_pointers: *ScreenPointers = undefined;
+
+pub var main_menu_key_pressed: bool = false;
 
 pub fn init(startup: *_startup_.Frontend) !void {
     // Set up each all screens.
@@ -18,6 +21,7 @@ pub fn init(startup: *_startup_.Frontend) !void {
     screen_pointers = try ScreenPointers.init(startup.*);
     startup.screen_pointers = screen_pointers;
     try screen_pointers.init_screens(startup.*);
+    errdefer screen_pointers.deinit();
 
     // Initialze the example demo window.
     // KICKZIG TODO:
@@ -36,15 +40,57 @@ pub fn deinit() void {
 pub fn frame(arena: std.mem.Allocator) !void {
     if (main_view.currentTag()) |current_tag| {
         switch (current_tag) {
+            .Tabbar => {
+                if (screen_pointers.Tabbar.?.willFrame()) {
+                    // The tab screen will frame.
+                    try frame_main_menu(arena);
+                    try screen_pointers.Tabbar.?.frame(arena);
+                } else {
+                    // This tab screen will not frame.
+                    // Switch back to the startup screen.
+                    if (_main_menu_.startup_screen_tag != .Tabbar) {
+                        try main_view.show(_main_menu_.startup_screen_tag);
+                        try frame(arena);
+                    }
+                }
+            },
+            .Remove => {
+                if (screen_pointers.Remove.?.willFrame()) {
+                    // The tab screen will frame.
+                    try frame_main_menu(arena);
+                    try screen_pointers.Remove.?.frame(arena);
+                } else {
+                    // This tab screen will not frame.
+                    // Switch back to the startup screen.
+                    if (_main_menu_.startup_screen_tag != .Remove) {
+                        try main_view.show(_main_menu_.startup_screen_tag);
+                        try frame(arena);
+                    }
+                }
+            },
             .Contacts => {
                 if (screen_pointers.Contacts.?.willFrame()) {
                     // The tab screen will frame.
-                    try frame_main_menu();
+                    try frame_main_menu(arena);
                     try screen_pointers.Contacts.?.frame(arena);
                 } else {
                     // This tab screen will not frame.
                     // Switch back to the startup screen.
                     if (_main_menu_.startup_screen_tag != .Contacts) {
+                        try main_view.show(_main_menu_.startup_screen_tag);
+                        try frame(arena);
+                    }
+                }
+            },
+            .Edit => {
+                if (screen_pointers.Edit.?.willFrame()) {
+                    // The tab screen will frame.
+                    try frame_main_menu(arena);
+                    try screen_pointers.Edit.?.frame(arena);
+                } else {
+                    // This tab screen will not frame.
+                    // Switch back to the startup screen.
+                    if (_main_menu_.startup_screen_tag != .Edit) {
                         try main_view.show(_main_menu_.startup_screen_tag);
                         try frame(arena);
                     }
@@ -82,7 +128,7 @@ pub fn frame(arena: std.mem.Allocator) !void {
     }
 }
 
-pub fn frame_main_menu() !void {
+pub fn frame_main_menu(arena: std.mem.Allocator) !void {
     if (!_main_menu_.show_main_menu) {
         // Not showing the main menu in this app.
         return;
@@ -96,8 +142,26 @@ pub fn frame_main_menu() !void {
 
         for (_main_menu_.sorted_main_menu_screen_tags, 0..) |screen_tag, id_extra| {
             const will_frame: bool = switch (screen_tag) {
-                .Contacts => blk: {
+                .Tabbar => blk: {
+                    if (screen_pointers.Tabbar) |screen| {
+                        break :blk screen.willFrame();
+                    } else {
+                        break :blk false;
+                    }
+                },                .Remove => blk: {
+                    if (screen_pointers.Remove) |screen| {
+                        break :blk screen.willFrame();
+                    } else {
+                        break :blk false;
+                    }
+                },                .Contacts => blk: {
                     if (screen_pointers.Contacts) |screen| {
+                        break :blk screen.willFrame();
+                    } else {
+                        break :blk false;
+                    }
+                },                .Edit => blk: {
+                    if (screen_pointers.Edit) |screen| {
                         break :blk screen.willFrame();
                     } else {
                         break :blk false;
@@ -109,21 +173,28 @@ pub fn frame_main_menu() !void {
             }
 
             const label: []const u8 = switch (screen_tag) {
-                .Contacts => screen_pointers.Contacts.?.label(),
-                .YesNo => screen_pointers.YesNo.?.label(),
-                .EOJ => screen_pointers.EOJ.?.label(),
-                .OK => screen_pointers.OK.?.label(),
-                .Choice => screen_pointers.Choice.?.label(),
+                .Tabbar => try screen_pointers.Tabbar.?.label(arena),
+                .Remove => try screen_pointers.Remove.?.label(arena),
+                .Contacts => try screen_pointers.Contacts.?.label(arena),
+                .Edit => try screen_pointers.Edit.?.label(arena),
+                .YesNo => try screen_pointers.YesNo.?.label(arena),
+                .EOJ => try screen_pointers.EOJ.?.label(arena),
+                .OK => try screen_pointers.OK.?.label(arena),
+                .Choice => try screen_pointers.Choice.?.label(arena),
             };
+            defer arena.free(label);
 
             if (try dvui.menuItemLabel(@src(), label, .{}, .{ .id_extra = id_extra }) != null) {
                 m.close();
 
                 return switch (screen_tag) {
+                    .Tabbar => main_view.show(screen_tag),
+                    .Remove => main_view.show(screen_tag),
                     .Contacts => main_view.show(screen_tag),
+                    .Edit => main_view.show(screen_tag),
                     else => blk: {
                         const yesno_args = try _modal_params_.OK.init(
-                            allocator,
+                            arena,
                             "That won't work.",
                             "Can not open modals from the main menu.",
                         );

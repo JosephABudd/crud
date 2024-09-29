@@ -8,9 +8,10 @@
 const std = @import("std");
 
 const _channel_ = @import("channel");
-const _message_ = @import("message");
 const _startup_ = @import("startup");
+
 const ExitFn = @import("various").ExitFn;
+const Message = @import("message").EditContact;
 const Store = @import("store").Store;
 
 pub const Messenger = struct {
@@ -21,6 +22,29 @@ pub const Messenger = struct {
     exit: ExitFn,
     store: *Store,
 
+    pub fn init(startup: _startup_.Backend) !*Messenger {
+        var messenger: *Messenger = try startup.allocator.create(Messenger);
+        messenger.allocator = startup.allocator;
+        messenger.send_channels = startup.send_channels;
+        messenger.receive_channels = startup.receive_channels;
+        messenger.triggers = startup.triggers;
+        messenger.exit = startup.exit;
+        messenger.store = startup.store.?;
+
+        // Subscribe to receive the EditContact message.
+        var receive_behavior = try startup.receive_channels.EditContact.initBehavior();
+        errdefer {
+            messenger.deinit();
+        }
+        receive_behavior.implementor = messenger;
+        receive_behavior.receiveFn = &Messenger.receiveEditContactFn;
+        try startup.receive_channels.EditContact.subscribe(receive_behavior);
+        errdefer {
+            messenger.deinit();
+        }
+        return messenger;
+    }
+
     pub fn deinit(self: *Messenger) void {
         self.allocator.destroy(self);
     }
@@ -28,7 +52,7 @@ pub const Messenger = struct {
     /// receiveEditContactFn receives the "EditContact" message from the front-end.
     /// It implements _channel_.FrontendToBackend.EditContact.Behavior.receiveFn found in deps/channel/fronttoback/EditContact.zig.
     /// The receiveEditContactFn owns the message it receives.
-    pub fn receiveEditContactFn(implementor: *anyopaque, message: *_message_.EditContact.Message) anyerror!void {
+    pub fn receiveEditContactFn(implementor: *anyopaque, message: *Message) anyerror!void {
         var self: *Messenger = @alignCast(@ptrCast(implementor));
         defer message.deinit();
 
@@ -60,7 +84,7 @@ pub const Messenger = struct {
     /// receiveJob fullfills the front-end's request.
     /// Returns nothing or an error.
     /// KICKZIG TODO: Add the required functionality.
-    fn receiveJob(self: *Messenger, message: *_message_.EditContact.Message) !void {
+    fn receiveJob(self: *Messenger, message: *Message) !void {
         if (message.frontend_payload.contact) |contact| {
             if (contact.id == 0) {
                 try message.backend_payload.set(
@@ -110,26 +134,3 @@ pub const Messenger = struct {
         }
     }
 };
-
-pub fn init(startup: _startup_.Backend) !*Messenger {
-    var messenger: *Messenger = try startup.allocator.create(Messenger);
-    messenger.allocator = startup.allocator;
-    messenger.send_channels = startup.send_channels;
-    messenger.receive_channels = startup.receive_channels;
-    messenger.triggers = startup.triggers;
-    messenger.exit = startup.exit;
-    messenger.store = startup.store.?;
-
-    // Subscribe to receive the EditContact message.
-    var receive_behavior = try startup.receive_channels.EditContact.initBehavior();
-    errdefer {
-        messenger.deinit();
-    }
-    receive_behavior.implementor = messenger;
-    receive_behavior.receiveFn = &Messenger.receiveEditContactFn;
-    try startup.receive_channels.EditContact.subscribe(receive_behavior);
-    errdefer {
-        messenger.deinit();
-    }
-    return messenger;
-}

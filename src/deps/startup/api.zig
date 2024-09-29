@@ -6,6 +6,7 @@ const dvui = @import("dvui");
 const _channel_ = @import("channel");
 const _closedownjobs_ = @import("closedownjobs");
 const _modal_params_ = @import("modal_params");
+
 const ExitFn = @import("various").ExitFn;
 const MainView = @import("framers").MainView;
 const ScreenPointers = @import("screen_pointers").ScreenPointers;
@@ -27,6 +28,7 @@ pub const Backend = struct {
 pub const Frontend = struct {
     allocator: std.mem.Allocator,
     window: *dvui.Window,
+    theme: *dvui.Theme,
     send_channels: *_channel_.FrontendToBackend,
     receive_channels: *_channel_.BackendToFrontend,
     main_view: *MainView,

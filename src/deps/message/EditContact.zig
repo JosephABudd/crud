@@ -17,8 +17,9 @@
 ///    i.  will process the data in the back-end payload.
 ///    ii. WILL NOT RETURN THE MESSAGE TO THE BACK-END.
 const std = @import("std");
-const Counter = @import("counter").Counter;
 const Contact = @import("record").Edit;
+const Counter = @import("counter").Counter;
+const ScreenTags = @import("framers").ScreenTags;
 
 // FrontendPayload is the "EditContact" message from the front-end to the back-end.
 /// KICKZIG TODO: Add your own front-end payload fields and methods.
@@ -29,9 +30,11 @@ pub const FrontendPayload = struct {
     is_set: bool,
 
     contact: ?*const Contact,
+    screen_tag: ?ScreenTags,
 
     pub const Settings = struct {
         contact: ?*const Contact = null,
+        screen_tag: ?ScreenTags = null,
     };
 
     fn init(allocator: std.mem.Allocator) !*FrontendPayload {
@@ -39,25 +42,28 @@ pub const FrontendPayload = struct {
         self.allocator = allocator;
         self.is_set = false;
         self.contact = null;
+        self.screen_tag = null;
         return self;
     }
 
     fn deinit(self: *FrontendPayload) void {
-        if (self.contact) |contact| {
-            @constCast(contact).deinit();
+        if (self.contact) |member| {
+            @constCast(member).deinit();
         }
         self.allocator.destroy(self);
     }
 
-    /// Returns an error if already set.
-    /// The caller owns the param values. fn set only copies values.
+    // Returns an error if already set.
     pub fn set(self: *FrontendPayload, values: Settings) !void {
         if (self.is_set) {
             return error.EditContactFrontendPayloadAlreadySet;
         }
         self.is_set = true;
-        if (values.contact) |contact| {
-            self.contact = try @constCast(contact).copy();
+        if (values.contact) |value| {
+            self.contact = try @constCast(value).copy();
+        }
+        if (values.screen_tag) |value| {
+            self.screen_tag = value;
         }
     }
 };
@@ -91,8 +97,7 @@ pub const BackendPayload = struct {
         self.allocator.destroy(self);
     }
 
-    /// Returns an error if already set.
-    /// The caller owns the param values. fn set only copies values.
+    // Returns an error if already set.
     pub fn set(self: *BackendPayload, values: Settings) !void {
         if (self.is_set) {
             return error.EditContactBackendPayloadAlreadySet;
@@ -111,6 +116,29 @@ pub const Message = struct {
     count_pointers: *Counter,
     frontend_payload: *FrontendPayload,
     backend_payload: *BackendPayload,
+
+    /// init creates an original message.
+    pub fn init(allocator: std.mem.Allocator) !*Message {
+        var self: *Message = try allocator.create(Message);
+        self.frontend_payload = try FrontendPayload.init(allocator);
+        errdefer {
+            allocator.destroy(self);
+        }
+        self.backend_payload = try BackendPayload.init(allocator);
+        errdefer {
+            self.frontend_payload.deinit();
+            allocator.destroy(self);
+        }
+        self.count_pointers = try Counter.init(allocator);
+        errdefer {
+            self.backend_payload.deinit();
+            self.frontend_payload.deinit();
+            allocator.destroy(self);
+        }
+        _ = self.count_pointers.inc();
+        self.allocator = allocator;
+        return self;
+    }
 
     // deinit does not deinit until self is the final pointer to Message.
     pub fn deinit(self: *Message) void {
@@ -153,26 +181,3 @@ pub const Message = struct {
         return self;
     }
 };
-
-/// init creates an original message.
-pub fn init(allocator: std.mem.Allocator) !*Message {
-    var self: *Message = try allocator.create(Message);
-    self.frontend_payload = try FrontendPayload.init(allocator);
-    errdefer {
-        allocator.destroy(self);
-    }
-    self.backend_payload = try BackendPayload.init(allocator);
-    errdefer {
-        self.frontend_payload.deinit();
-        allocator.destroy(self);
-    }
-    self.count_pointers = try Counter.init(allocator);
-    errdefer {
-        self.backend_payload.deinit();
-        self.frontend_payload.deinit();
-        allocator.destroy(self);
-    }
-    _ = self.count_pointers.inc();
-    self.allocator = allocator;
-    return self;
-}

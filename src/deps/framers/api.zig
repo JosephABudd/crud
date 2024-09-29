@@ -1,16 +1,20 @@
 const std = @import("std");
 const dvui = @import("dvui");
 
-const _lock_ = @import("lock");
 const _modal_params_ = @import("modal_params");
 const _startup_ = @import("startup");
+const sorted_main_menu_screen_tags = @import("main_menu").sorted_main_menu_screen_tags;
+const startup_screen_tag = @import("main_menu").startup_screen_tag;
+
+const Container = @import("various").Container;
 const ExitFn = @import("various").ExitFn;
+
 pub const ScreenTags = @import("screen_tags.zig").ScreenTags;
 
 /// MainView is each and every screen.
 pub const MainView = struct {
     allocator: std.mem.Allocator,
-    lock: *_lock_.ThreadLock,
+    lock: std.Thread.Mutex,
     window: *dvui.Window,
     exit: ExitFn,
     current: ?ScreenTags,
@@ -21,8 +25,7 @@ pub const MainView = struct {
 
     pub fn init(startup: _startup_.Frontend) !*MainView {
         var self: *MainView = try startup.allocator.create(MainView);
-        self.lock = try _lock_.init(startup.allocator);
-        errdefer startup.allocator.destroy(self);
+        self.lock = std.Thread.Mutex{};
 
         self.allocator = startup.allocator;
         self.exit = startup.exit;
@@ -38,7 +41,6 @@ pub const MainView = struct {
     }
 
     pub fn deinit(self: *MainView) void {
-        self.lock.deinit();
         self.allocator.destroy(self);
     }
 
@@ -74,13 +76,21 @@ pub const MainView = struct {
         return modal_args;
     }
 
+
     pub fn show(self: *MainView, screen: ScreenTags) !void {
         self.lock.lock();
         defer self.lock.unlock();
 
+        if (!MainView.isMainMenuTag(screen)) {
+            return error.NotAMainMenuTag;
+        }
+
         // Only show if not a modal screen.
         return switch (screen) {
-            .Contacts => self.showContacts(),
+            .Remove => self._showRemove(),
+            .Contacts => self._showContacts(),
+            .Edit => self._showEdit(),
+            .Tabbar => self._showTabbar(),
             else => error.CantShowModalScreen,
         };
     }
@@ -90,20 +100,103 @@ pub const MainView = struct {
         defer self.lock.unlock();
 
         switch (screen) {
-            .Contacts => self.refreshContacts(),
-            .YesNo => self.refreshYesNo(),
-            .OK => self.refreshOK(),
-            .Choice => self.refreshChoice(),
+            .Remove => self._refreshRemove(),
+            .Contacts => self._refreshContacts(),
+            .Edit => self._refreshEdit(),
+            .Tabbar => self._refreshTabbar(),
+            .YesNo => self._refreshYesNo(),
+            .OK => self._refreshOK(),
+            .Choice => self._refreshChoice(),
             else => {}, // EOJ.
         }
     }
 
+    fn isMainMenuTag(screen: ScreenTags) bool {
+        if (screen == startup_screen_tag) {
+            return true;
+        }
+        for (sorted_main_menu_screen_tags) |tag| {
+            if (tag == screen) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+
+    // The Remove screen.
+
+    /// showRemove makes the Remove screen to the current one.
+    pub fn showRemove(self: *MainView) void {
+        self.lock.lock();
+        defer self.lock.unlock();
+
+        self._showRemove();
+    }
+
+    /// _showRemove makes the Remove screen to the current one.
+    fn _showRemove(self: *MainView) void {
+        if (!isMainMenuTag(.Remove)) {
+            // The .Remove tag is not in the main menu.
+            return;
+        }
+
+        if (!self.current_is_modal) {
+            // The current screen is not modal so replace it.
+            self.current = .Remove;
+            self.current_is_modal = false;
+        }
+    }
+
+    /// refreshRemove refreshes the window if the Remove screen is the current one.
+    pub fn refreshRemove(self: *MainView) void {
+        self.lock.lock();
+        defer self.lock.unlock();
+
+        self._refreshRemove();
+    }
+
+    /// _refreshRemove refreshes the window if the Remove screen is the current one.
+    pub fn _refreshRemove(self: *MainView) void {
+        if (self.current) |current| {
+            if (current == .Remove) {
+                // Remove is the current screen.
+                dvui.refresh(self.window, @src(), null);
+            }
+        }
+    }
+
+    /// refreshRemoveContainerFn refreshes the window if the Remove screen is the current one.
+    pub fn refreshRemoveContainerFn(implementor: *anyopaque) void {
+        var self: *MainView = @alignCast(@ptrCast(implementor));
+        self.refreshRemove();
+    }
+
+    /// Convert MainView to a Container interface for the Remove screen.
+    pub fn asRemoveContainer(self: *MainView) anyerror!*Container {
+        return Container.init(
+            self.allocator,
+            self,
+            null,
+            MainView.refreshRemoveContainerFn,
+        );
+    }
     // The Contacts screen.
 
     /// showContacts makes the Contacts screen to the current one.
     pub fn showContacts(self: *MainView) void {
         self.lock.lock();
         defer self.lock.unlock();
+
+        self._showContacts();
+    }
+
+    /// _showContacts makes the Contacts screen to the current one.
+    fn _showContacts(self: *MainView) void {
+        if (!isMainMenuTag(.Contacts)) {
+            // The .Contacts tag is not in the main menu.
+            return;
+        }
 
         if (!self.current_is_modal) {
             // The current screen is not modal so replace it.
@@ -117,6 +210,11 @@ pub const MainView = struct {
         self.lock.lock();
         defer self.lock.unlock();
 
+        self._refreshContacts();
+    }
+
+    /// _refreshContacts refreshes the window if the Contacts screen is the current one.
+    pub fn _refreshContacts(self: *MainView) void {
         if (self.current) |current| {
             if (current == .Contacts) {
                 // Contacts is the current screen.
@@ -124,7 +222,136 @@ pub const MainView = struct {
             }
         }
     }
-    // The YesNo modal screen.
+
+    /// refreshContactsContainerFn refreshes the window if the Contacts screen is the current one.
+    pub fn refreshContactsContainerFn(implementor: *anyopaque) void {
+        var self: *MainView = @alignCast(@ptrCast(implementor));
+        self.refreshContacts();
+    }
+
+    /// Convert MainView to a Container interface for the Contacts screen.
+    pub fn asContactsContainer(self: *MainView) anyerror!*Container {
+        return Container.init(
+            self.allocator,
+            self,
+            null,
+            MainView.refreshContactsContainerFn,
+        );
+    }
+    // The Edit screen.
+
+    /// showEdit makes the Edit screen to the current one.
+    pub fn showEdit(self: *MainView) void {
+        self.lock.lock();
+        defer self.lock.unlock();
+
+        self._showEdit();
+    }
+
+    /// _showEdit makes the Edit screen to the current one.
+    fn _showEdit(self: *MainView) void {
+        if (!isMainMenuTag(.Edit)) {
+            // The .Edit tag is not in the main menu.
+            return;
+        }
+
+        if (!self.current_is_modal) {
+            // The current screen is not modal so replace it.
+            self.current = .Edit;
+            self.current_is_modal = false;
+        }
+    }
+
+    /// refreshEdit refreshes the window if the Edit screen is the current one.
+    pub fn refreshEdit(self: *MainView) void {
+        self.lock.lock();
+        defer self.lock.unlock();
+
+        self._refreshEdit();
+    }
+
+    /// _refreshEdit refreshes the window if the Edit screen is the current one.
+    pub fn _refreshEdit(self: *MainView) void {
+        if (self.current) |current| {
+            if (current == .Edit) {
+                // Edit is the current screen.
+                dvui.refresh(self.window, @src(), null);
+            }
+        }
+    }
+
+    /// refreshEditContainerFn refreshes the window if the Edit screen is the current one.
+    pub fn refreshEditContainerFn(implementor: *anyopaque) void {
+        var self: *MainView = @alignCast(@ptrCast(implementor));
+        self.refreshEdit();
+    }
+
+    /// Convert MainView to a Container interface for the Edit screen.
+    pub fn asEditContainer(self: *MainView) anyerror!*Container {
+        return Container.init(
+            self.allocator,
+            self,
+            null,
+            MainView.refreshEditContainerFn,
+        );
+    }
+    // The Tabbar screen.
+
+    /// showTabbar makes the Tabbar screen to the current one.
+    pub fn showTabbar(self: *MainView) void {
+        self.lock.lock();
+        defer self.lock.unlock();
+
+        self._showTabbar();
+    }
+
+    /// _showTabbar makes the Tabbar screen to the current one.
+    fn _showTabbar(self: *MainView) void {
+        if (!isMainMenuTag(.Tabbar)) {
+            // The .Tabbar tag is not in the main menu.
+            return;
+        }
+
+        if (!self.current_is_modal) {
+            // The current screen is not modal so replace it.
+            self.current = .Tabbar;
+            self.current_is_modal = false;
+        }
+    }
+
+    /// refreshTabbar refreshes the window if the Tabbar screen is the current one.
+    pub fn refreshTabbar(self: *MainView) void {
+        self.lock.lock();
+        defer self.lock.unlock();
+
+        self._refreshTabbar();
+    }
+
+    /// _refreshTabbar refreshes the window if the Tabbar screen is the current one.
+    pub fn _refreshTabbar(self: *MainView) void {
+        if (self.current) |current| {
+            if (current == .Tabbar) {
+                // Tabbar is the current screen.
+                dvui.refresh(self.window, @src(), null);
+            }
+        }
+    }
+
+    /// refreshTabbarContainerFn refreshes the window if the Tabbar screen is the current one.
+    pub fn refreshTabbarContainerFn(implementor: *anyopaque) void {
+        var self: *MainView = @alignCast(@ptrCast(implementor));
+        self.refreshTabbar();
+    }
+
+    /// Convert MainView to a Container interface for the Tabbar screen.
+    pub fn asTabbarContainer(self: *MainView) anyerror!*Container {
+        return Container.init(
+            self.allocator,
+            self,
+            null,
+            MainView.refreshTabbarContainerFn,
+        );
+    }    // The YesNo modal screen.
 
     /// showYesNo starts the YesNo modal screen.
     /// Param args is the YesNo modal args.
@@ -173,6 +400,22 @@ pub const MainView = struct {
                 dvui.refresh(self.window, @src(), null);
             }
         }
+    }
+
+    /// refreshYesNoContainerFn refreshes the window if the YesNo screen is the current one.
+    pub fn refreshYesNoContainerFn(implementor: *anyopaque) void {
+        var self: *MainView = @alignCast(@ptrCast(implementor));
+        self.refreshYesNo();
+    }
+
+    /// Convert MainView to a Container interface for the YesNo screen.
+    pub fn asYesNoContainer(self: *MainView) anyerror!*Container {
+        return Container.init(
+            self.allocator,
+            self,
+            null,
+            MainView.refreshYesNoContainerFn,
+        );
     }
     // The OK modal screen.
 
@@ -224,6 +467,22 @@ pub const MainView = struct {
             }
         }
     }
+
+    /// refreshOKContainerFn refreshes the window if the OK screen is the current one.
+    pub fn refreshOKContainerFn(implementor: *anyopaque) void {
+        var self: *MainView = @alignCast(@ptrCast(implementor));
+        self.refreshOK();
+    }
+
+    /// Convert MainView to a Container interface for the OK screen.
+    pub fn asOKContainer(self: *MainView) anyerror!*Container {
+        return Container.init(
+            self.allocator,
+            self,
+            null,
+            MainView.refreshOKContainerFn,
+        );
+    }
     // The Choice modal screen.
 
     /// showChoice starts the Choice modal screen.
@@ -273,6 +532,22 @@ pub const MainView = struct {
                 dvui.refresh(self.window, @src(), null);
             }
         }
+    }
+
+    /// refreshChoiceContainerFn refreshes the window if the Choice screen is the current one.
+    pub fn refreshChoiceContainerFn(implementor: *anyopaque) void {
+        var self: *MainView = @alignCast(@ptrCast(implementor));
+        self.refreshChoice();
+    }
+
+    /// Convert MainView to a Container interface for the Choice screen.
+    pub fn asChoiceContainer(self: *MainView) anyerror!*Container {
+        return Container.init(
+            self.allocator,
+            self,
+            null,
+            MainView.refreshChoiceContainerFn,
+        );
     }
 
     // The EOJ modal screen.
@@ -337,4 +612,5 @@ pub const MainView = struct {
             }
         }
     }
+
 };

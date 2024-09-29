@@ -1,6 +1,6 @@
 .{
     .name = "crud",
-    .version = "0.0.0",
+    .version = "0.4.0",
     .dependencies = .{
         .dvui = .{
             .url = "https://github.com/david-vanderson/dvui/archive/dc3340403a8c04bf343e6c92215d4908745354eb.tar.gz",

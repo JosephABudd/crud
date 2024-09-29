@@ -29,6 +29,14 @@ pub const Group = struct {
         return self.allocator.create(Behavior);
     }
 
+    pub fn init(allocator: std.mem.Allocator, exit: ExitFn) !*Group {
+        var channel: *Group = try allocator.create(Group);
+        channel.members = std.AutoHashMap(*anyopaque, *Behavior).init(allocator);
+        channel.allocator = allocator;
+        channel.exit = exit;
+        return channel;
+    }
+
     pub fn deinit(self: *Group) void {
         // deint each Behavior.
         var iterator = self.members.iterator();
@@ -82,11 +90,3 @@ pub const Group = struct {
         }
     }
 };
-
-pub fn init(allocator: std.mem.Allocator, exit: ExitFn) !*Group {
-    var channel: *Group = try allocator.create(Group);
-    channel.members = std.AutoHashMap(*anyopaque, *Behavior).init(allocator);
-    channel.allocator = allocator;
-    channel.exit = exit;
-    return channel;
-}

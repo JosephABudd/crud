@@ -5,7 +5,6 @@
 const std = @import("std");
 const dvui = @import("dvui");
 const SDLBackend = @import("SDLBackend");
-
 const _backend_ = @import("backend/api.zig");
 const _channel_ = @import("channel");
 const _closer_ = @import("closer");
@@ -13,6 +12,7 @@ const _closedownjobs_ = @import("closedownjobs");
 const _frontend_ = @import("frontend/api.zig");
 const _modal_params_ = @import("modal_params");
 const _startup_ = @import("startup");
+
 const ExitFn = @import("various").ExitFn;
 const MainView = @import("framers").MainView;
 const Store = @import("store").Store;
@@ -84,9 +84,11 @@ pub fn main() !void {
 
     // Initialize the front end.
     // See src/deps/startup/api.zig
+    const dark_theme = &dvui.Adwaita.dark;
     var startup_frontend: _startup_.Frontend = _startup_.Frontend{
         .allocator = gpa,
         .window = &win,
+        .theme = dark_theme,
         .send_channels = front_to_back_channels,
         .receive_channels = back_to_front_channels,
         .main_view = undefined,
@@ -130,12 +132,20 @@ pub fn main() !void {
         // set the theme.
         if (!theme_set) {
             theme_set = true;
-            const dark_theme = &dvui.Adwaita.dark;
             dvui.themeSet(dark_theme);
         }
 
         // send all SDL events to dvui for processing
         const quit = try sdl_backend.addAllEvents(&win);
+
+        for (dvui.events()) |*e| {
+            if (e.evt == .key and e.evt.key.code == .f10 and e.evt.key.action == .down) {
+                e.handled = true;
+                _frontend_.main_menu_key_pressed = true;
+                break;
+            }
+        }
+
         // The state of the app's closer.
         switch (_closer_.context()) {
             .none => {

@@ -1,54 +1,132 @@
 const std = @import("std");
 const dvui = @import("dvui");
 
-const _channel_ = @import("channel");
-const _messenger_ = @import("messenger.zig");
-const _panels_ = @import("panels.zig");
-const _startup_ = @import("startup");
-const _various_ = @import("various");
-const MainView = @import("framers").MainView;
+const _channel_ = @import("channel");const _startup_ = @import("startup");
 
+const Container = @import("various").Container;
+const Content = @import("various").Content;
+const MainView = @import("framers").MainView;
+const Messenger = @import("view/messenger.zig").Messenger;
+const Panels = @import("panels.zig").Panels;
+
+/// KICKZIG TODO:
+/// Options will need to be customized.
+/// Keep each value optional and set to null by default.
+//KICKZIG TODO: Customize Options to your requirements.
+pub const Options = struct {
+    screen_name: ?[]const u8 = null, // Example field.
+
+    fn copyOf(values: Options, allocator: std.mem.Allocator) !*Options {
+        var copy_of: *Options = try allocator.create(Options);
+        // Null optional members for fn reset.
+        copy_of.screen_name = null;
+        try copy_of.reset(allocator, values);
+        errdefer copy_of.deinit();
+        return copy_of;
+    }
+
+    fn deinit(self: *Options, allocator: std.mem.Allocator) void {
+        // Screen name.
+        if (self.screen_name) |member| {
+            allocator.free(member);
+        }
+        allocator.destroy(self);
+    }
+
+
+    fn reset(
+        self: *Options,
+        allocator: std.mem.Allocator,
+        settings: Options,
+    ) !void {
+        return self._reset(
+            allocator,
+            settings.screen_name,
+        );
+    }
+
+    fn _reset(
+        self: *Options,
+        allocator: std.mem.Allocator,
+        screen_name: ?[]const u8,
+    ) !void {
+        // Screen name.
+        if (screen_name) |reset_value| {
+            if (self.screen_name) |value| {
+                allocator.free(value);
+            }
+            self.screen_name = try allocator.alloc(u8, reset_value.len);
+            errdefer {
+                self.screen_name = null;
+                self.deinit();
+            }
+            @memcpy(@constCast(self.screen_name.?), reset_value);
+        }
+    }
+};
+
+///The Contacts screen is a panel screen.
+///Panel screens function by showing only one panel at a time.
+///Panel screens are always content and so they implement Content.
+///You can:
+/// 1. Put this screen in the main menu. Add .Contacts to pub const sorted_main_menu_screen_tags in src/deps/main_menu/api.zig.
+/// 2. Use this screen as content for a tab. Example: kickzig add-tab «new-screen-name» *Contacts «another-tab-name» ...
+///
 pub const Screen = struct {
     allocator: std.mem.Allocator,
     main_view: *MainView,
-    all_panels: ?*_panels_.Panels,
-    messenger: ?*_messenger_.Messenger,
+    all_panels: ?*Panels,
+    messenger: ?*Messenger,
     send_channels: *_channel_.FrontendToBackend,
     receive_channels: *_channel_.BackendToFrontend,
-    container: ?*_various_.Container,
-    only_frame_in_container: bool,
+    container: ?*Container,
+    state: ?*Options,
 
+    const default_settings = Options{
+        .screen_name = "Contacts",
+    };
     /// init constructs this self, subscribes it to main_view and returns the error.
-    pub fn init(startup: _startup_.Frontend) !*Screen {
+    pub fn init(
+        startup: _startup_.Frontend,
+        container: ?*Container,
+        screen_options: Options,
+    ) !*Screen {
         var self: *Screen = try startup.allocator.create(Screen);
         self.allocator = startup.allocator;
         self.main_view = startup.main_view;
         self.receive_channels = startup.receive_channels;
         self.send_channels = startup.send_channels;
-        self.container = null;
-        self.only_frame_in_container = false;
 
+        self.state = Options.copyOf(default_settings, startup.allocator) catch |err| {
+            self.state = null;
+            self.deinit();
+            return err;
+        };
+        try self.state.?.reset(startup.allocator, screen_options);
+        errdefer self.deinit();
         // The messenger.
-        self.messenger = try _messenger_.init(startup.allocator, startup.main_view, startup.send_channels, startup.receive_channels, startup.exit);
+        self.messenger = try Messenger.init(startup.allocator, startup.main_view, startup.send_channels, startup.receive_channels, startup.exit, screen_options);
         errdefer {
             self.deinit();
         }
 
         // All of the panels.
-        self.all_panels = try _panels_.init(startup.allocator, startup.main_view, self.messenger.?, startup.exit, startup.window);
-        errdefer {
-            self.deinit();
-        }
+        self.all_panels = try Panels.init(startup.allocator, startup.main_view, self.messenger.?, startup.exit, startup.window, container, screen_options);
+        errdefer self.deinit();
+
         self.messenger.?.all_panels = self.all_panels.?;
         // The Select panel is the default.
         self.all_panels.?.setCurrentToSelect();
+        self.container = container;
         return self;
     }
 
     pub fn deinit(self: *Screen) void {
-        if (self.container) |member| {
-            member.deinit();
+        if (self.state) |state| {
+            state.deinit(self.allocator);
         }
+        // A screen is deinited by it's container or by a failed init.
+        // So don't deinit the container.
         if (self.messenger) |member| {
             member.deinit();
         }
@@ -58,78 +136,75 @@ pub const Screen = struct {
         self.allocator.destroy(self);
     }
 
-    /// refresh only if this screen is showing.
-    pub fn refresh(self: *Screen) void {
-        if (self.container) |container| {
-            // This screen is framing inside a container.
-            // That container is framing inside the main view.
-            // Refresh the container.
-            // The container which is another type of screen, will refresh only if it is the currently viewed screen inside the main view.
-            container.refresh();
-        } else {
-            // This screen is framing inside the main view.
-            // Main view will refresh only if this is the currently viewed screen.
-            self.main_view.refreshRemove();
-        }
-    }
-
-    /// If container is not null then this screen is running inside a container.
-    /// Containers run inside the main view.
-    pub fn setContainer(self: *Screen, container: *_various_.Container) void {
-        self.container = container;
-        self.all_panels.?.setContainer(container);
-    }
-
-    pub fn willFrame(self: *Screen) bool {
-        return switch (self.only_frame_in_container) {
-            true => blk: {
-                // This screen will not frame inside the main view.
-                // This screen will only frame inside a container which frames inside the main view.
-                break :blk (self.container != null);
-            },
-            false => blk: {
-                // This screen will frame:
-                // 1. inside the main view.
-                // 2. inside a container.
-                break :blk true;
-            },
-        };
-    }
-
-    /// The caller does not own the returned value.
-    /// KICKZIG TODO: You may want to edit the returned label.
-    /// The label is displayed in the main menu only.
-    pub fn label(_: *Screen) []const u8 {
-        return "Contacts";
+    /// The caller owns the returned value.
+    pub fn label(self: *Screen, allocator: std.mem.Allocator) ![]const u8 {
+        return try std.fmt.allocPrint(allocator, "{s}", .{self.state.?.screen_name.?});
     }
 
     pub fn frame(self: *Screen, arena: std.mem.Allocator) !void {
         try self.all_panels.?.frameCurrent(arena);
     }
 
-    // Container functions.
-
-    /// When a container refreshes it calls labelFn.
-    pub fn labelFn(implementor: *anyopaque) anyerror![]const u8 {
-        var self: *Screen = @alignCast(@ptrCast(implementor));
-        return self.label();
+    fn setContainer(self: *Screen, container: *Container) !void {
+        self.container = container;
+        return self.all_panels.?.setContainer(container);
     }
 
-    /// When a container refreshes it calls refreshFn.
-    pub fn refreshFn(implementor: *anyopaque) void {
-        var self: *Screen = @alignCast(@ptrCast(implementor));
-        self.all_panels.?.refresh();
+    /// KICKZIG TODO: You may find a reason to modify willFrame.
+    pub fn willFrame(self: *Screen) bool {
+        return self.container != null;
     }
 
-    /// When a container frames it calls frameFn.
-    pub fn frameFn(implementor: *anyopaque, arena: std.mem.Allocator) anyerror!void {
+    // Content functions.
+
+    /// Convert this Screen to a Content interface.
+    pub fn asContent(self: *Screen) !*Content {
+        return Content.init(
+            self.allocator,
+            self,
+
+            Screen.deinitContentFn,
+            Screen.frameContentFn,
+            Screen.labelContentFn,
+            Screen.willFrameContentFn,
+            Screen.setContainerContentFn,
+        );
+    }
+
+    /// deinitContentFn is an implementation of the Content interface.
+    /// The Container calls this when it closes or deinits.
+    pub fn deinitContentFn(implementor: *anyopaque) void {
+        var self: *Screen = @alignCast(@ptrCast(implementor));
+        self.deinit();
+    }
+
+    /// willFrameContentFn is an implementation of the Content interface.
+    /// The Container calls this when it wants to frame.
+    /// Returns if this content will frame under it's current state.
+    pub fn willFrameContentFn(implementor: *anyopaque) bool {
+        var self: *Screen = @alignCast(@ptrCast(implementor));
+        return self.willFrame();
+    }
+
+    /// frameContentFn is an implementation of the Content interface.
+    /// The Container calls this when it frames.
+    pub fn frameContentFn(implementor: *anyopaque, arena: std.mem.Allocator) anyerror!void {
         var self: *Screen = @alignCast(@ptrCast(implementor));
         return self.frame(arena);
     }
 
-    /// When a container deinits it calls deinitFn.
-    pub fn deinitFn(implementor: *anyopaque) void {
+    /// labelContentFn is an implementation of the Content interface.
+    /// The Container may call this when it refreshes.
+    /// The caller does not own the returned value.
+    pub fn labelContentFn(implementor: *anyopaque, arena: std.mem.Allocator) anyerror![]const u8 {
         var self: *Screen = @alignCast(@ptrCast(implementor));
-        self.deinit();
+        return self.label(arena);
+    }
+
+    /// setContainerContentFn is an implementation of the Content interface.
+    /// The Container calls this to set itself as this Content's Container.
+    pub fn setContainerContentFn(implementor: *anyopaque, container: *Container) !void {
+        var self: *Screen = @alignCast(@ptrCast(implementor));
+        return self.setContainer(container);
     }
 };

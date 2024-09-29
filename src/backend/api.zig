@@ -3,11 +3,13 @@
 /// This file will be never be touched by kickzig.
 /// You are free to edit this file.
 const std = @import("std");
+
 const _channel_ = @import("channel");
-const _messenger_ = @import("messenger/api.zig");
 const _startup_ = @import("startup");
 
-var messenger: ?*_messenger_.Messenger = null;
+const Messenger = @import("messenger/api.zig").Messenger;
+
+var messenger: ?*Messenger = null;
 var triggers: *_channel_.Trigger = undefined;
 
 /// KICKZIG TODO:
@@ -19,12 +21,12 @@ pub fn kickStart() !void {
 }
 
 pub fn init(startup: _startup_.Backend) !void {
-    messenger = try _messenger_.init(startup);
+    messenger = try Messenger.init(startup);
     triggers = startup.triggers;
 }
 
 pub fn deinit() void {
-    if (messenger) |msngr| {
-        msngr.deinit();
+    if (messenger) |member| {
+        member.deinit();
     }
 }

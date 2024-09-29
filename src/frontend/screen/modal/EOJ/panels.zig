@@ -1,8 +1,7 @@
 const std = @import("std");
 const dvui = @import("dvui");
 
-const _messenger_ = @import("messenger.zig");
-const _EOJ_ = @import("EOJ_panel.zig");
+const EOJPanel = @import("EOJ.zig").Panel;
 const ExitFn = @import("various").ExitFn;
 const MainView = @import("framers").MainView;
 const ModalParams = @import("modal_params").EOJ;
@@ -15,7 +14,7 @@ const PanelTags = enum {
 pub const Panels = struct {
     allocator: std.mem.Allocator,
     current_panel_tag: PanelTags,
-    EOJ: ?*_EOJ_.Panel,
+    EOJ: ?*EOJPanel,
 
     pub fn deinit(self: *Panels) void {
         if (self.EOJ) |member| {
@@ -25,11 +24,17 @@ pub const Panels = struct {
     }
 
     pub fn frameCurrent(self: *Panels, allocator: std.mem.Allocator) !void {
-        const result = switch (self.current_panel_tag) {
+        return switch (self.current_panel_tag) {
             .EOJ => self.EOJ.?.frame(allocator),
             .none => self.EOJ.?.frame(allocator),
         };
-        return result;
+    }
+
+    pub fn borderColorCurrent(self: *Panels) dvui.Options.ColorOrName {
+        return switch (self.current_panel_tag) {
+            .EOJ => self.EOJ.?.view.?.border_color,
+            .none => self.EOJ.?.view.?.border_color,
+        };
     }
 
     pub fn setCurrentToEOJ(self: *Panels) void {
@@ -37,18 +42,16 @@ pub const Panels = struct {
     }
 
     pub fn presetModal(self: *Panels, modal_params: *ModalParams) !void {
-        try self.EOJ.presetModal(modal_params);
+        try self.EOJ.?.presetModal(modal_params);
+    }
+
+    pub fn init(allocator: std.mem.Allocator, main_view: *MainView, exit: ExitFn, window: *dvui.Window, theme: *dvui.Theme) !*Panels {
+        var panels: *Panels = try allocator.create(Panels);
+        panels.allocator = allocator;
+
+        panels.EOJ = try EOJPanel.init(allocator, main_view, panels, exit, window, theme);
+        errdefer panels.deinit();
+
+        return panels;
     }
 };
-
-pub fn init(allocator: std.mem.Allocator, main_view: *MainView, messenger: *_messenger_.Messenger, exit: ExitFn, window: *dvui.Window) !*Panels {
-    var panels: *Panels = try allocator.create(Panels);
-    panels.allocator = allocator;
-
-    panels.EOJ = try _EOJ_.init(allocator, main_view, panels, messenger, exit, window);
-    errdefer {
-        panels.deinit();
-    }
-
-    return panels;
-}

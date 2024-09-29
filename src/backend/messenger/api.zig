@@ -3,69 +3,53 @@
 const std = @import("std");
 
 const _startup_ = @import("startup");
-const _EditContact_ = @import("EditContact.zig");
-const _RebuildContactList_ = @import("RebuildContactList.zig");
-const _RemoveContact_ = @import("RemoveContact.zig");
-const _CloseDownJobs_ = @import("CloseDownJobs.zig");
-const _AddContact_ = @import("AddContact.zig");
+
+const EditContactMessenger = @import("EditContact.zig").Messenger;
+const RebuildContactListMessenger = @import("RebuildContactList.zig").Messenger;
+const RemoveContactMessenger = @import("RemoveContact.zig").Messenger;
+const AddContactMessenger = @import("AddContact.zig").Messenger;
 
 /// Messenger is the collection of the back-end messengers.
 /// These messengers are how the back-end communicate with the front-end.
 pub const Messenger = struct {
     allocator: std.mem.Allocator,
-    EditContact: *_EditContact_.Messenger,
-    RebuildContactList: *_RebuildContactList_.Messenger,
-    RemoveContact: *_RemoveContact_.Messenger,
-    CloseDownJobs: *_CloseDownJobs_.Messenger,
-    AddContact: *_AddContact_.Messenger,
+    EditContact_messenger: ?*EditContactMessenger,
+    RebuildContactList_messenger: ?*RebuildContactListMessenger,
+    RemoveContact_messenger: ?*RemoveContactMessenger,
+    AddContact_messenger: ?*AddContactMessenger,
 
     pub fn deinit(self: *Messenger) void {
-        self.EditContact.deinit();
-        self.RebuildContactList.deinit();
-        self.RemoveContact.deinit();
-        self.CloseDownJobs.deinit();
-        self.AddContact.deinit();
+        if (self.EditContact_messenger) |member| {
+            member.deinit();
+        }
+        if (self.RebuildContactList_messenger) |member| {
+            member.deinit();
+        }
+        if (self.RemoveContact_messenger) |member| {
+            member.deinit();
+        }
+        if (self.AddContact_messenger) |member| {
+            member.deinit();
+        }
         self.allocator.destroy(self);
     }
-};
 
-/// init constructs a Messenger.
-/// It initializes each unique message handler.
-pub fn init(startup: _startup_.Backend) !*Messenger {
-    var messenger: *Messenger = try startup.allocator.create(Messenger);
-    errdefer {
-        startup.allocator.destroy(messenger);
+    /// init constructs a Messenger.
+    /// It initializes each unique message handler.
+    pub fn init(startup: _startup_.Backend) !*Messenger {
+        var messenger: *Messenger = try startup.allocator.create(Messenger);
+        errdefer {
+            startup.allocator.destroy(messenger);
+        }
+        messenger.allocator = startup.allocator;
+        messenger.EditContact_messenger = try EditContactMessenger.init(startup);
+        errdefer messenger.deinit();
+        messenger.RebuildContactList_messenger = try RebuildContactListMessenger.init(startup);
+        errdefer messenger.deinit();
+        messenger.RemoveContact_messenger = try RemoveContactMessenger.init(startup);
+        errdefer messenger.deinit();
+        messenger.AddContact_messenger = try AddContactMessenger.init(startup);
+        errdefer messenger.deinit();
+        return messenger;
     }
-    messenger.allocator = startup.allocator;
-    messenger.EditContact = try _EditContact_.init(startup);
-    errdefer {
-        messenger.allocator.destroy(messenger);
-    }
-    messenger.RebuildContactList = try _RebuildContactList_.init(startup);
-    errdefer {
-        messenger.EditContact.deinit();
-        messenger.allocator.destroy(messenger);
-    }
-    messenger.RemoveContact = try _RemoveContact_.init(startup);
-    errdefer {
-        messenger.EditContact.deinit();
-        messenger.RebuildContactList.deinit();
-        messenger.allocator.destroy(messenger);
-    }
-    messenger.CloseDownJobs = try _CloseDownJobs_.init(startup);
-    errdefer {
-        messenger.EditContact.deinit();
-        messenger.RebuildContactList.deinit();
-        messenger.RemoveContact.deinit();
-        messenger.allocator.destroy(messenger);
-    }
-    messenger.AddContact = try _AddContact_.init(startup);
-    errdefer {
-        messenger.EditContact.deinit();
-        messenger.RebuildContactList.deinit();
-        messenger.RemoveContact.deinit();
-        messenger.CloseDownJobs.deinit();
-        messenger.allocator.destroy(messenger);
-    }
-    return messenger;
-}
+};

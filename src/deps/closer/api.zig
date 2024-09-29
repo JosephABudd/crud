@@ -1,7 +1,6 @@
 const std = @import("std");
 const dvui = @import("dvui");
 
-const _lock_ = @import("lock");
 const _jobs_ = @import("closedownjobs");
 const ExitFn = @import("various").ExitFn;
 const MainView = @import("framers").MainView;
@@ -16,7 +15,7 @@ const Context = enum {
 };
 
 var _allocator: std.mem.Allocator = undefined;
-var lock: *_lock_.ThreadLock = undefined;
+var lock: std.Thread.Mutex = undefined;
 var _main_view: *MainView = undefined;
 var state: Context = .none;
 var modal_params: ?*Params = null;
@@ -33,7 +32,7 @@ pub fn eoj() void {
 }
 
 pub fn init(allocator: std.mem.Allocator, jobs: *_jobs_.Jobs, win: *dvui.Window) !ExitFn {
-    lock = try _lock_.init(allocator);
+    lock = std.Thread.Mutex{};
     _allocator = allocator;
     _main_view = undefined;
     modal_params = try Params.init(allocator, jobs);
@@ -46,7 +45,6 @@ pub fn set_screens(main_view: *MainView) void {
 }
 
 pub fn deinit() void {
-    lock.deinit();
     if (modal_params) |params| {
         params.deinit();
     }

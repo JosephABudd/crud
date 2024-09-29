@@ -10,8 +10,9 @@
 /// 1. will receive the message and process the data in the back-end payload.
 /// 2. WILL NOT RETURN THE MESSAGE TO THE BACK-END.
 const std = @import("std");
-const Counter = @import("counter").Counter;
 const Contact = @import("record").List;
+const Counter = @import("counter").Counter;
+const ScreenTags = @import("framers").ScreenTags;
 
 // BackendPayload is the "RebuildContactList" message from the back-end to the front-end.
 /// KICKZIG TODO: Add your own back-end payload fields and methods.
@@ -44,14 +45,13 @@ pub const BackendPayload = struct {
         self.allocator.destroy(self);
     }
 
-    /// Returns an error if already set.
-    /// The caller owns the param values. fn set only copies values.
+    // Returns an error if already set.
     pub fn set(self: *BackendPayload, values: Settings) !void {
         if (self.is_set) {
             return error.RebuildContactListBackendPayloadAlreadySet;
         }
-        self.contacts = try self.copyOfContacts(values.contacts);
         self.is_set = true;
+        self.contacts = try self.copyOfContacts(values.contacts);
     }
 
     /// Returns a copy of the slice of contacts.
@@ -88,6 +88,23 @@ pub const Message = struct {
     count_pointers: *Counter,
     backend_payload: *BackendPayload,
 
+    /// init creates an original message.
+    pub fn init(allocator: std.mem.Allocator) !*Message {
+        var self: *Message = try allocator.create(Message);
+        self.count_pointers = try Counter.init(allocator);
+        errdefer {
+            allocator.destroy(self);
+        }
+        self.backend_payload = try BackendPayload.init(allocator);
+        errdefer {
+            allocator.destroy(self);
+            self.count_pointers.deinit();
+        }
+        _ = self.count_pointers.inc();
+        self.allocator = allocator;
+        return self;
+    }
+
     // deinit does not deinit until self is the final pointer to Message.
     pub fn deinit(self: *Message) void {
         if (self.count_pointers.dec() > 0) {
@@ -115,20 +132,3 @@ pub const Message = struct {
         return self;
     }
 };
-
-/// init creates an original message.
-pub fn init(allocator: std.mem.Allocator) !*Message {
-    var self: *Message = try allocator.create(Message);
-    self.count_pointers = try Counter.init(allocator);
-    errdefer {
-        allocator.destroy(self);
-    }
-    self.backend_payload = try BackendPayload.init(allocator);
-    errdefer {
-        allocator.destroy(self);
-        self.count_pointers.deinit();
-    }
-    _ = self.count_pointers.inc();
-    self.allocator = allocator;
-    return self;
-}

@@ -6,10 +6,11 @@
 const std = @import("std");
 
 const _channel_ = @import("channel");
-const _message_ = @import("message");
 const _startup_ = @import("startup");
+
 const Contact = @import("record").List;
 const ExitFn = @import("various").ExitFn;
+const Message = @import("message").RebuildContactList;
 const Store = @import("store").Store;
 
 pub const Messenger = struct {
@@ -19,6 +20,29 @@ pub const Messenger = struct {
     triggers: *_channel_.Trigger,
     exit: ExitFn,
     store: *Store,
+
+    pub fn init(startup: _startup_.Backend) !*Messenger {
+        var messenger: *Messenger = try startup.allocator.create(Messenger);
+        messenger.allocator = startup.allocator;
+        messenger.send_channels = startup.send_channels;
+        messenger.receive_channels = startup.receive_channels;
+        messenger.triggers = startup.triggers;
+        messenger.exit = startup.exit;
+        messenger.store = startup.store.?;
+
+        // Subscribe to trigger-send the RebuildContactList message.
+        var trigger_behavior = try startup.triggers.RebuildContactList.?.initBehavior();
+        errdefer {
+            messenger.deinit();
+        }
+        trigger_behavior.implementor = messenger;
+        trigger_behavior.triggerFn = &Messenger.triggerRebuildContactListFn;
+        try startup.triggers.RebuildContactList.?.subscribe(trigger_behavior);
+        errdefer {
+            messenger.deinit();
+        }
+        return messenger;
+    }
 
     pub fn deinit(self: *Messenger) void {
         self.allocator.destroy(self);
@@ -31,7 +55,7 @@ pub const Messenger = struct {
     pub fn triggerRebuildContactListFn(implementor: *anyopaque) anyerror!void {
         var self: *Messenger = @alignCast(@ptrCast(implementor));
 
-        const message: *_message_.RebuildContactList.Message = self.triggerJob() catch |err| {
+        const message: *Message = self.triggerJob() catch |err| {
             // Fatal error.
             self.exit(@src(), err, "self.triggerJob()");
             return err;
@@ -48,8 +72,8 @@ pub const Messenger = struct {
     /// triggerJob creates message to send to the front-end.
     /// Returns the processed message or an error.
     /// KICKZIG TODO: Add the required functionality.
-    fn triggerJob(self: *Messenger) !*_message_.RebuildContactList.Message {
-        var message: *_message_.RebuildContactList.Message = try _message_.RebuildContactList.init(self.allocator);
+    fn triggerJob(self: *Messenger) !*Message {
+        var message: *Message = try Message.init(self.allocator);
         const contacts: ?[]const *const Contact = self.store.contact_table.getAll() catch |err| {
             message.deinit();
             return err;
@@ -66,26 +90,3 @@ pub const Messenger = struct {
         return message;
     }
 };
-
-pub fn init(startup: _startup_.Backend) !*Messenger {
-    var messenger: *Messenger = try startup.allocator.create(Messenger);
-    messenger.allocator = startup.allocator;
-    messenger.send_channels = startup.send_channels;
-    messenger.receive_channels = startup.receive_channels;
-    messenger.triggers = startup.triggers;
-    messenger.exit = startup.exit;
-    messenger.store = startup.store.?;
-
-    // Subscribe to trigger-send the RebuildContactList message.
-    var trigger_behavior = try startup.triggers.RebuildContactList.?.initBehavior();
-    errdefer {
-        messenger.deinit();
-    }
-    trigger_behavior.implementor = messenger;
-    trigger_behavior.triggerFn = &Messenger.triggerRebuildContactListFn;
-    try startup.triggers.RebuildContactList.?.subscribe(trigger_behavior);
-    errdefer {
-        messenger.deinit();
-    }
-    return messenger;
-}

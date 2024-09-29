@@ -6,7 +6,6 @@ const std = @import("std");
 const ExitFn = @import("various").ExitFn;
 const EditContact = @import("EditContact.zig").Group;
 const RemoveContact = @import("RemoveContact.zig").Group;
-const CloseDownJobs = @import("CloseDownJobs.zig").Group;
 const AddContact = @import("AddContact.zig").Group;
 
 pub const GeneralDispatcher = struct {
@@ -18,7 +17,6 @@ pub const GeneralDispatcher = struct {
     // Custom channels.
     EditContact: ?*EditContact = null,
     RemoveContact: ?*RemoveContact = null,
-    CloseDownJobs: ?*CloseDownJobs = null,
     AddContact: ?*AddContact = null,
 
     pub fn init(allocator: std.mem.Allocator, exit: ExitFn) !*GeneralDispatcher {
@@ -33,9 +31,6 @@ pub const GeneralDispatcher = struct {
         errdefer self.deinit();
 
         self.RemoveContact = try RemoveContact.init(allocator, self, exit);
-        errdefer self.deinit();
-
-        self.CloseDownJobs = try CloseDownJobs.init(allocator, self, exit);
         errdefer self.deinit();
 
         self.AddContact = try AddContact.init(allocator, self, exit);
@@ -56,9 +51,6 @@ pub const GeneralDispatcher = struct {
             member.deinit();
         }
         if (self.RemoveContact) |member| {
-            member.deinit();
-        }
-        if (self.CloseDownJobs) |member| {
             member.deinit();
         }
         if (self.AddContact) |member| {
@@ -102,10 +94,6 @@ pub const GeneralDispatcher = struct {
                     return;
                 };
                 self.RemoveContact.?.dispatch() catch {
-                    // The channel or message receiver handled the errror.
-                    return;
-                };
-                self.CloseDownJobs.?.dispatch() catch {
                     // The channel or message receiver handled the errror.
                     return;
                 };
